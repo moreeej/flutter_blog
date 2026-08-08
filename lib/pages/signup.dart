@@ -74,12 +74,11 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
           'password': hashedPassword,
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Account created for ${_emailController.text.trim()}',
-            ),
-          ),
+        if (!mounted) return;
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const Login()),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
