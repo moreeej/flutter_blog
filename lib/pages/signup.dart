@@ -1,9 +1,7 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:blog/pages/login.dart';
+import 'package:blog/services/auth_service.dart';
 
 void main() {
   runApp(const Signup());
@@ -64,9 +62,7 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
 
       if (response.user != null) {
         final randomId = DateTime.now().millisecondsSinceEpoch;
-        final hashedPassword = sha256
-            .convert(utf8.encode(_passwordController.text))
-            .toString();
+        final hashedPassword = hashPassword(_passwordController.text);
 
         await Supabase.instance.client.from('users').insert({
           'id': randomId,
