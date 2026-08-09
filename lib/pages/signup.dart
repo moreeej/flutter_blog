@@ -14,6 +14,7 @@ class Signup extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sign up',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
@@ -32,8 +33,10 @@ class SimpleFormPage extends StatefulWidget {
 
 class _SimpleFormPageState extends State<SimpleFormPage> {
   final _formKey = GlobalKey<FormState>();
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _isSubmitting = false;
 
   @override
@@ -42,6 +45,10 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
     _passwordController.dispose();
     super.dispose();
   }
+
+  // ==========================================================
+  // SIGN UP
+  // ==========================================================
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) {
@@ -53,6 +60,7 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
     });
 
     try {
+      // Create Supabase Auth account
       final response = await Supabase.instance.client.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -61,9 +69,13 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
       if (!mounted) return;
 
       if (response.user != null) {
+        // Generate int8-compatible ID
         final randomId = DateTime.now().millisecondsSinceEpoch;
+
+        // Hash password
         final hashedPassword = hashPassword(_passwordController.text);
 
+        // Insert user into users table
         await Supabase.instance.client.from('users').insert({
           'id': randomId,
           'email': response.user!.email,
@@ -72,6 +84,12 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
 
         if (!mounted) return;
 
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account created successfully!')),
+        );
+
+        // Go to Login page
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const Login()),
@@ -83,11 +101,13 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
       }
     } on AuthException catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Unexpected error: $e')));
@@ -100,6 +120,10 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
     }
   }
 
+  // ==========================================================
+  // BUILD
+  // ==========================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,11 +133,55 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Create your account',
-                style: Theme.of(context).textTheme.headlineSmall,
+              // ==================================================
+              // LOGO + TITLE
+              // ==================================================
+              Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: Image.asset(
+                            'assets/images/jv_logo.png',
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                child: const Icon(Icons.person),
+                              );
+                            },
+                          ),
+                        ),
+
+                        const SizedBox(width: 12),
+
+                        Expanded(
+                          child: Text(
+                            'Jerome Vlog',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+
               const SizedBox(height: 24),
+
+              // ==================================================
+              // SIGN UP FORM
+              // ==================================================
               Expanded(
                 child: Center(
                   child: SingleChildScrollView(
@@ -121,7 +189,25 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
                       key: _formKey,
                       child: Column(
                         children: [
-                          // Email
+                          // ==================================================
+                          // CREATE ACCOUNT TITLE
+                          // ==================================================
+                          const Center(
+                            child: Text(
+                              'Create an account',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // ==================================================
+                          // EMAIL
+                          // ==================================================
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 400),
                             child: SizedBox(
@@ -138,9 +224,11 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
                                   if (value == null || value.trim().isEmpty) {
                                     return 'Please enter your email';
                                   }
+
                                   if (!value.contains('@')) {
                                     return 'Please enter a valid email';
                                   }
+
                                   return null;
                                 },
                               ),
@@ -149,7 +237,9 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
 
                           const SizedBox(height: 16),
 
-                          // Password
+                          // ==================================================
+                          // PASSWORD
+                          // ==================================================
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 400),
                             child: SizedBox(
@@ -166,9 +256,11 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
                                   if (value == null || value.trim().isEmpty) {
                                     return 'Please enter a password';
                                   }
+
                                   if (value.length < 6) {
                                     return 'Password must be at least 6 characters';
                                   }
+
                                   return null;
                                 },
                               ),
@@ -177,7 +269,9 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
 
                           const SizedBox(height: 24),
 
-                          // Button
+                          // ==================================================
+                          // SIGN UP BUTTON
+                          // ==================================================
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 400),
                             child: SizedBox(
@@ -193,15 +287,20 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
 
                           const SizedBox(height: 16),
 
+                          // ==================================================
+                          // LOGIN
+                          // ==================================================
                           TextButton(
-                            onPressed: () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const Login(),
-                                ),
-                              );
-                            },
+                            onPressed: _isSubmitting
+                                ? null
+                                : () {
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const Login(),
+                                      ),
+                                    );
+                                  },
                             child: const Text(
                               'Already have an account? Log in hehe',
                             ),
@@ -219,4 +318,3 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
     );
   }
 }
-
