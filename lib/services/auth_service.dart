@@ -1,6 +1,25 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+Map<String, dynamic>? currentUserSession;
+
+void setCurrentUser(Map<String, dynamic>? user) {
+  if (user == null) {
+    currentUserSession = null;
+    debugPrint('currentUser: null');
+    return;
+  }
+
+  currentUserSession = Map<String, dynamic>.from(user)..remove('password');
+  debugPrint('currentUser: $currentUserSession');
+}
+
+void clearCurrentUser() {
+  currentUserSession = null;
+  debugPrint('currentUser: null');
+}
 
 String hashPassword(String password) {
   return sha256.convert(utf8.encode(password)).toString();
