@@ -16,8 +16,11 @@ class Login extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Simple Form',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+        ),
         useMaterial3: true,
       ),
       home: const SimpleFormPage(),
@@ -29,29 +32,47 @@ class SimpleFormPage extends StatefulWidget {
   const SimpleFormPage({super.key});
 
   @override
-  State<SimpleFormPage> createState() => _SimpleFormPageState();
+  State<SimpleFormPage> createState() =>
+      _SimpleFormPageState();
 }
 
-class _SimpleFormPageState extends State<SimpleFormPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+class _SimpleFormPageState
+    extends State<SimpleFormPage> {
+  final _formKey =
+      GlobalKey<FormState>();
+
+  final _emailController =
+      TextEditingController();
+
+  final _passwordController =
+      TextEditingController();
+
+  // ==========================================================
+  // DISPOSE
+  // ==========================================================
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+
     super.dispose();
   }
+
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Logging in...')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Logging in...'),
+      ),
+    );
 
     try {
       final user = await fetchUserForLogin(
@@ -59,31 +80,60 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
         password: _passwordController.text,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (user != null) {
+        // Save the logged-in user.
         setCurrentUser(user);
 
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context)
+            .hideCurrentSnackBar();
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('login successfully')),
+          const SnackBar(
+            content: Text(
+              'Login successful!',
+            ),
+          ),
         );
+
+        // Go to Landing Page.
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const LandingPage()),
+          MaterialPageRoute(
+            builder: (context) =>
+                const LandingPage(),
+          ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid email or password')),
+          const SnackBar(
+            content: Text(
+              'Invalid email or password.',
+            ),
+          ),
         );
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e')),
+        SnackBar(
+          content: Text(
+            'Login failed: $e',
+          ),
+        ),
       );
     }
   }
+
+  // ==========================================================
+  // BUILD
+  // ==========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -92,86 +142,237 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 12),
+
+              // ==================================================
+              // HEADER
+              // ==================================================
+
               Row(
                 children: [
+                  // Logo + title
                   Expanded(
-                    child: Text(
-                      'Welcome to Mobile Legends',
-                      style: Theme.of(context).textTheme.headlineSmall,
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(24),
+                          child: Image.asset(
+                            'assets/images/jv_logo.png',
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (
+                                  context,
+                                  error,
+                                  stackTrace,
+                                ) {
+                              return Container(
+                                width: 48,
+                                height: 48,
+                                decoration:
+                                    BoxDecoration(
+                                  color: Colors
+                                      .grey
+                                      .shade200,
+                                  borderRadius:
+                                      BorderRadius
+                                          .circular(
+                                    24,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.person,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                        const SizedBox(width: 12),
+
+                        Expanded(
+                          child: Text(
+                            'Jerome Vlog',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall,
+                            overflow:
+                                TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+
+                  // Home button
                   IconButton(
                     onPressed: () {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (context) => const HomePage()),
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              const HomePage(),
+                        ),
                       );
                     },
-                    icon: const Icon(Icons.home),
-                    tooltip: 'Go to homepage',
+                    icon: const Icon(
+                      Icons.home,
+                    ),
+                    tooltip:
+                        'Go to homepage',
                   ),
                 ],
               ),
+
               const SizedBox(height: 32),
+
+              // ==================================================
+              // LOGIN FORM
+              // ==================================================
+
               Expanded(
                 child: Center(
                   child: Form(
                     key: _formKey,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 400),
+                      constraints:
+                          const BoxConstraints(
+                        maxWidth: 400,
+                      ),
                       child: ListView(
                         shrinkWrap: true,
                         children: [
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.email),
+                          const Center(
+                            child: Text(
+                              'Welcome Back!',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
+                          ),
+                          const SizedBox(height: 12),
+
+                          // ==================================================
+                          // EMAIL
+                          // ==================================================
+
+                          TextFormField(
+                            controller:
+                                _emailController,
+                            keyboardType:
+                                TextInputType
+                                    .emailAddress,
+                            decoration:
+                                const InputDecoration(
+                              labelText: 'Email',
+                              border:
+                                  OutlineInputBorder(),
+                              prefixIcon:
+                                  Icon(
+                                Icons.email,
+                              ),
+                            ),
+                            validator:
+                                (value) {
+                              if (value ==
+                                      null ||
+                                  value
+                                      .trim()
+                                      .isEmpty) {
                                 return 'Please enter your email';
                               }
+
                               return null;
                             },
                           ),
-                          const SizedBox(height: 16),
+
+                          const SizedBox(
+                            height: 16,
+                          ),
+
+                          // ==================================================
+                          // PASSWORD
+                          // ==================================================
+
                           TextFormField(
-                            controller: _passwordController,
+                            controller:
+                                _passwordController,
                             obscureText: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Password',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.lock),
+                            decoration:
+                                const InputDecoration(
+                              labelText:
+                                  'Password',
+                              border:
+                                  OutlineInputBorder(),
+                              prefixIcon:
+                                  Icon(
+                                Icons.lock,
+                              ),
                             ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
+                            validator:
+                                (value) {
+                              if (value ==
+                                      null ||
+                                  value
+                                      .trim()
+                                      .isEmpty) {
                                 return 'Please enter your password';
                               }
+
                               return null;
                             },
                           ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: _submitForm,
-                            child: const Text('Log in'),
+
+                          const SizedBox(
+                            height: 24,
                           ),
-                          const SizedBox(height: 16),
+
+                          // ==================================================
+                          // LOGIN BUTTON
+                          // ==================================================
+
+                          SizedBox(
+                            width:
+                                double.infinity,
+                            child:
+                                ElevatedButton(
+                              onPressed:
+                                  _submitForm,
+                              child:
+                                  const Text(
+                                'Log in',
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(
+                            height: 16,
+                          ),
+
+                          // ==================================================
+                          // SIGN UP
+                          // ==================================================
+
                           TextButton(
                             onPressed: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const Signup(),
+                                  builder:
+                                      (context) =>
+                                          const Signup(),
                                 ),
                               );
                             },
-                            child: const Text("Don't have an account? Sign up"),
+                            child: const Text(
+                              "Don't have an account? Sign up",
+                            ),
                           ),
                         ],
                       ),
@@ -186,3 +387,4 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
     );
   }
 }
+
