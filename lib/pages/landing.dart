@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:blog/services/auth_service.dart';
 
-import 'package:blog/main.dart';
 import 'package:blog/pages/createPost.dart';
 import 'package:blog/pages/profile.dart';
 
@@ -337,48 +336,17 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   // ==========================================================
-  // LOGOUT
-  // ==========================================================
-
-  Future<void> _logout() async {
-    try {
-      await Supabase.instance.client.auth.signOut();
-
-      clearCurrentUser();
-
-      if (!mounted) {
-        return;
-      }
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
-    } catch (e) {
-      debugPrint('LOGOUT ERROR: $e');
-
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Logout failed: $e')));
-    }
-  }
-
-  // ==========================================================
   // BUILD
   // ==========================================================
 
   @override
   Widget build(BuildContext context) {
-    final String? userEmail = currentUserSession?['email']?.toString();
+    final String? userEmail = currentUser?['email']?.toString();
 
     final bool isAdmin = userEmail == 'jeromeaw02@gmail.com';
 
     final String username =
-        currentUserSession?['username']?.toString() ??
+        currentUser?['username']?.toString() ??
         (isAdmin ? 'Boss' : 'Visitor');
 
     return Scaffold(
@@ -441,17 +409,17 @@ class _LandingScreenState extends State<LandingScreen> {
                       radius: 24,
                       backgroundColor: Colors.deepPurple.shade100,
                       backgroundImage:
-                          currentUserSession?['profile_pic'] != null &&
-                              currentUserSession!['profile_pic']
+                          currentUser?['profile_pic'] != null &&
+                              currentUser!['profile_pic']
                                   .toString()
                                   .isNotEmpty
                           ? NetworkImage(
-                              currentUserSession!['profile_pic'].toString(),
+                              currentUser!['profile_pic'].toString(),
                             )
                           : null,
                       child:
-                          currentUserSession?['profile_pic'] == null ||
-                              currentUserSession!['profile_pic']
+                          currentUser?['profile_pic'] == null ||
+                              currentUser!['profile_pic']
                                   .toString()
                                   .isEmpty
                           ? const Icon(

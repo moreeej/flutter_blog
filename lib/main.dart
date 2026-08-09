@@ -1,17 +1,48 @@
-import 'package:blog/pages/login.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:blog/services/auth_service.dart';
+
+import 'package:blog/pages/login.dart';
+import 'package:blog/pages/landing.dart';
+
+// ==========================================================
+// MAIN
+// ==========================================================
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ==========================================================
+  // LOAD ENVIRONMENT VARIABLES
+  // ==========================================================
+
   await dotenv.load(fileName: '.env');
+
+  // ==========================================================
+  // INITIALIZE SUPABASE
+  // ==========================================================
 
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL'] ?? '',
     anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
   );
+
+  // ==========================================================
+  // RESTORE LOGGED-IN USER
+  // ==========================================================
+  //
+  // This loads the user saved by setCurrentUser()
+  // from SharedPreferences.
+  //
+  // This MUST happen before runApp().
+  // ==========================================================
+
+  await loadCurrentUser();
+
+  // ==========================================================
+  // START APPLICATION
+  // ==========================================================
 
   runApp(const MyApp());
 }
@@ -25,14 +56,25 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ========================================================
+    // DO NOT USE await HERE
+    //
+    // loadCurrentUser() was already called in main().
+    // ========================================================
+
     return MaterialApp(
       title: 'Flutter Form',
       debugShowCheckedModeBanner: false,
+
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+
+      // ======================================================
+      // CHECK IF USER IS ALREADY LOGGED IN
+      // ======================================================
+      home: currentUser != null ? const LandingPage() : const HomePage(),
     );
   }
 }
@@ -74,7 +116,7 @@ class _HomePageState extends State<HomePage> {
 
     _scrollController.addListener(_onScroll);
 
-    // Load the first 5 posts.
+    // Load first 5 posts.
     _loadPosts();
   }
 
@@ -104,22 +146,21 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    // No more posts available.
+    // No more posts.
     if (!_hasMore) {
       return;
     }
 
     final position = _scrollController.position;
 
-    // Load the next 5 posts when the user
-    // gets close to the bottom.
+    // Load next 5 posts near bottom.
     if (position.pixels >= position.maxScrollExtent - 200) {
       _loadPosts();
     }
   }
 
   // ==========================================================
-  // LOAD POSTS FROM SUPABASE
+  // LOAD POSTS
   // ==========================================================
 
   Future<void> _loadPosts() async {
@@ -136,29 +177,18 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // ========================================================
+      // ======================================================
       // PAGINATION RANGE
-      // ========================================================
-      //
-      // First request:
-      // 0 - 4   = first 5 posts
-      //
-      // Second:
-      // 5 - 9   = next 5 posts
-      //
-      // Third:
-      // 10 - 14 = next 5 posts
-      //
-      // etc.
+      // ======================================================
 
       final int start = _offset;
       final int end = _offset + _pageSize - 1;
 
       debugPrint('Loading posts: $start - $end');
 
-      // ========================================================
+      // ======================================================
       // SUPABASE QUERY
-      // ========================================================
+      // ======================================================
 
       final response = await Supabase.instance.client
           .from('posts')
@@ -166,9 +196,9 @@ class _HomePageState extends State<HomePage> {
           .order('id', ascending: false)
           .range(start, end);
 
-      // ========================================================
-      // MAP SUPABASE RESPONSE
-      // ========================================================
+      // ======================================================
+      // CONVERT RESPONSE
+      // ======================================================
 
       final List<Map<String, dynamic>> newPosts = (response as List)
           .map((post) => Map<String, dynamic>.from(post))
@@ -179,15 +209,10 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        // Add the new 5 posts to
-        // the existing list.
         _posts.addAll(newPosts);
 
-        // Move offset forward.
         _offset += newPosts.length;
 
-        // If Supabase returned fewer than
-        // 5 posts, there are no more posts.
         _hasMore = newPosts.length == _pageSize;
 
         _isLoading = false;
@@ -258,38 +283,26 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Row(
                     children: [
-                  ClipRRect(
-                    borderRadius:
-                        BorderRadius.circular(24),
-                    child: Image.asset(
-                      'assets/images/jv_logo.png',
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (
-                            context,
-                            error,
-                            stackTrace,
-                          ) {
-                        return Container(
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Image.asset(
+                          'assets/images/jv_logo.png',
                           width: 48,
                           height: 48,
-                          decoration:
-                              BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius:
-                                BorderRadius.circular(
-                              24,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.person,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: const Icon(Icons.person),
+                            );
+                          },
+                        ),
+                      ),
 
                       const SizedBox(width: 12),
 
@@ -307,7 +320,7 @@ class _HomePageState extends State<HomePage> {
                   const Spacer(),
 
                   // ==================================================
-                  // LOGIN
+                  // LOGIN BUTTON
                   // ==================================================
                   ElevatedButton(
                     onPressed: () {
@@ -346,17 +359,17 @@ class _HomePageState extends State<HomePage> {
   // ==========================================================
 
   Widget _buildPostList() {
-    // ==========================================================
+    // ========================================================
     // INITIAL LOADING
-    // ==========================================================
+    // ========================================================
 
     if (_posts.isEmpty && _isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // ==========================================================
+    // ========================================================
     // NO POSTS
-    // ==========================================================
+    // ========================================================
 
     if (_posts.isEmpty && !_isLoading) {
       return ListView(
@@ -368,23 +381,22 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    // ==========================================================
+    // ========================================================
     // POST LIST
-    // ==========================================================
+    // ========================================================
 
     return ListView.builder(
       controller: _scrollController,
 
       physics: const AlwaysScrollableScrollPhysics(),
 
-      // Add one extra item for
-      // the bottom loading indicator.
+      // Add extra item for loading indicator.
       itemCount: _posts.length + (_hasMore ? 1 : 0),
 
       itemBuilder: (context, index) {
-        // ========================================================
+        // ====================================================
         // BOTTOM LOADING INDICATOR
-        // ========================================================
+        // ====================================================
 
         if (index == _posts.length) {
           return const Padding(
@@ -393,15 +405,15 @@ class _HomePageState extends State<HomePage> {
           );
         }
 
-        // ========================================================
+        // ====================================================
         // GET POST
-        // ========================================================
+        // ====================================================
 
-        final post = _posts[index];
+        final Map<String, dynamic> post = _posts[index];
 
-        // ========================================================
-        // MAP DATABASE COLUMNS
-        // ========================================================
+        // ====================================================
+        // DATABASE COLUMNS
+        // ====================================================
 
         final String title = post['title']?.toString() ?? 'Untitled';
 
@@ -410,9 +422,9 @@ class _HomePageState extends State<HomePage> {
 
         final String? imageUrl = post['image']?.toString();
 
-        // ========================================================
+        // ====================================================
         // POST CARD
-        // ========================================================
+        // ====================================================
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
@@ -424,9 +436,9 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ==================================================
+              // ==============================================
               // IMAGE
-              // ==================================================
+              // ==============================================
               if (imageUrl != null && imageUrl.isNotEmpty)
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(
@@ -462,9 +474,9 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-              // ==================================================
+              // ==============================================
               // CONTENT
-              // ==================================================
+              // ==============================================
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -484,9 +496,9 @@ class _HomePageState extends State<HomePage> {
 
                     const SizedBox(height: 12),
 
-                    // ==================================================
-                    // ACTION BUTTONS
-                    // ==================================================
+                    // ==========================================
+                    // COMMENT
+                    // ==========================================
                     Row(
                       children: [
                         IconButton(

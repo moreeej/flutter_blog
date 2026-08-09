@@ -1,65 +1,117 @@
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-Map<String, dynamic>? currentUserSession;
+// ==========================================================
+// CURRENT USER
+// ==========================================================
 
-void setCurrentUser(Map<String, dynamic>? user) {
-  if (user == null) {
-    currentUserSession = null;
-    debugPrint('currentUser: null');
-    return;
-  }
+Map<String, dynamic>? currentUser;
 
-  currentUserSession = Map<String, dynamic>.from(user)..remove('password');
-  debugPrint('currentUser: $currentUserSession');
-}
-
-void clearCurrentUser() {
-  currentUserSession = null;
-  debugPrint('currentUser: null');
-}
+// ==========================================================
+// HASH PASSWORD
+// ==========================================================
 
 String hashPassword(String password) {
-  return sha256.convert(utf8.encode(password)).toString();
+  return sha256.convert(
+    utf8.encode(password),
+  ).toString();
 }
 
-bool verifyPassword({
-  required String inputPassword,
-  required String storedHash,
-}) {
-  return hashPassword(inputPassword) == storedHash;
-}
+// ==========================================================
+// LOGIN
+// ==========================================================
 
 Future<Map<String, dynamic>?> fetchUserForLogin({
   required String email,
   required String password,
 }) async {
+  final hashedPassword = hashPassword(password);
+
   final response = await Supabase.instance.client
       .from('users')
       .select()
       .eq('email', email)
-      .limit(1)
+      .eq('password', hashedPassword)
       .maybeSingle();
 
   if (response == null) {
     return null;
   }
 
-  final storedHash = response['password'] as String?;
-  if (storedHash == null) {
-    return null;
-  }
+  return Map<String, dynamic>.from(response);
+}
 
-  final isValid = verifyPassword(
-    inputPassword: password,
-    storedHash: storedHash,
+// ==========================================================
+// SAVE CURRENT USER
+// ==========================================================
+
+Future<void> setCurrentUser(
+  Map<String, dynamic> user,
+) async {
+  currentUser = Map<String, dynamic>.from(user);
+
+  final prefs = await SharedPreferences.getInstance();
+
+  await prefs.setString(
+    'current_user',
+    jsonEncode(currentUser),
   );
 
-  if (!isValid) {
+  print('USER SAVED: $currentUser');
+}
+
+// ==========================================================
+// LOAD CURRENT USER
+// ==========================================================
+
+Future<Map<String, dynamic>?> loadCurrentUser() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  final savedUser = prefs.getString('current_user');
+
+  if (savedUser == null || savedUser.isEmpty) {
+    currentUser = null;
+
+    print('NO SAVED USER');
+
     return null;
   }
 
-  return response;
+  try {
+    final decoded = jsonDecode(savedUser);
+
+    if (decoded is Map) {
+      currentUser = Map<String, dynamic>.from(decoded);
+
+      print('USER RESTORED: $currentUser');
+
+      return currentUser;
+    }
+  } catch (e) {
+    print('LOAD USER ERROR: $e');
+
+    await prefs.remove('current_user');
+  }
+
+  currentUser = null;
+
+  return null;
 }
+
+// ==========================================================
+// LOGOUT
+// ==========================================================
+
+Future<void> logoutUser() async {
+  currentUser = null;
+
+  final prefs = await SharedPreferences.getInstance();
+
+  await prefs.remove('current_user');
+
+  print('USER LOGGED OUT');
+}
+

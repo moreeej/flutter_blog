@@ -47,7 +47,7 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
   }
 
   // ==========================================================
-  // SIGN UP
+  // SIGN UP WITHOUT SUPABASE AUTH
   // ==========================================================
 
   Future<void> _submitForm() async {
@@ -60,51 +60,56 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
     });
 
     try {
-      // Create Supabase Auth account
-      final response = await Supabase.instance.client.auth.signUp(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
+
+      // ======================================================
+      // GENERATE USER ID
+      // ======================================================
+
+      final randomId = DateTime.now().millisecondsSinceEpoch;
+
+      // ======================================================
+      // HASH PASSWORD
+      // ======================================================
+
+      final hashedPassword = hashPassword(password);
+
+      // ======================================================
+      // INSERT DIRECTLY INTO USERS TABLE
+      // NO SUPABASE AUTH ACCOUNT IS CREATED
+      // ======================================================
+
+      await Supabase.instance.client.from('users').insert({
+        'id': randomId,
+        'email': email,
+        'password': hashedPassword,
+      });
 
       if (!mounted) return;
 
-      if (response.user != null) {
-        // Generate int8-compatible ID
-        final randomId = DateTime.now().millisecondsSinceEpoch;
+      // ======================================================
+      // SUCCESS MESSAGE
+      // ======================================================
 
-        // Hash password
-        final hashedPassword = hashPassword(_passwordController.text);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account created successfully!')),
+      );
 
-        // Insert user into users table
-        await Supabase.instance.client.from('users').insert({
-          'id': randomId,
-          'email': response.user!.email,
-          'password': hashedPassword,
-        });
+      // ======================================================
+      // GO TO LOGIN
+      // ======================================================
 
-        if (!mounted) return;
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account created successfully!')),
-        );
-
-        // Go to Login page
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const Login()),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sign-up failed. Please try again.')),
-        );
-      }
-    } on AuthException catch (e) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const Login()),
+      );
+    } on PostgrestException catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ).showSnackBar(SnackBar(content: Text('Database error: ${e.message}')));
     } catch (e) {
       if (!mounted) return;
 
@@ -279,7 +284,9 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
                               child: ElevatedButton(
                                 onPressed: _isSubmitting ? null : _submitForm,
                                 child: Text(
-                                  _isSubmitting ? 'Signing up...' : 'Sign Up',
+                                  _isSubmitting
+                                      ? 'Creating account...'
+                                      : 'Sign Up',
                                 ),
                               ),
                             ),

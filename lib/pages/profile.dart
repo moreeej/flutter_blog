@@ -45,11 +45,11 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
 
-    _username = currentUserSession?['username']?.toString() ?? '-';
+    _username = currentUser?['username']?.toString() ?? '-';
 
-    _email = currentUserSession?['email']?.toString();
+    _email = currentUser?['email']?.toString();
 
-    _profilePic = currentUserSession?['profile_pic']?.toString();
+    _profilePic = currentUser?['profile_pic']?.toString();
 
     _usernameController = TextEditingController(text: _username);
   }
@@ -106,7 +106,7 @@ class _ProfilePageState extends State<ProfilePage> {
   // ==========================================================
 
   Future<String?> _uploadProfileImage(Uint8List imageBytes) async {
-    final String? userId = currentUserSession?['id']?.toString();
+    final String? userId = currentUser?['id']?.toString();
 
     if (userId == null) {
       throw Exception('User is not authenticated.');
@@ -144,7 +144,7 @@ class _ProfilePageState extends State<ProfilePage> {
   // ==========================================================
 
   Future<void> _saveProfile() async {
-    final String? userId = currentUserSession?['id']?.toString();
+    final String? userId = currentUser?['id']?.toString();
 
     if (userId == null) {
       ScaffoldMessenger.of(
@@ -198,12 +198,12 @@ class _ProfilePageState extends State<ProfilePage> {
       // UPDATE LOCAL SESSION
       // ======================================================
 
-      currentUserSession ??= {};
+      currentUser ??= {};
 
-      currentUserSession!['username'] = newUsername;
+      currentUser!['username'] = newUsername;
 
       if (newProfilePic != null) {
-        currentUserSession!['profile_pic'] = newProfilePic;
+        currentUser!['profile_pic'] = newProfilePic;
       }
 
       if (!mounted) {
@@ -318,13 +318,13 @@ class _ProfilePageState extends State<ProfilePage> {
       },
     );
 
-    // User cancelled the logout
+    // User cancelled logout.
     if (shouldLogout != true) {
       return;
     }
 
     // ==========================================================
-    // LOGOUT FROM SUPABASE
+    // LOGOUT
     // ==========================================================
 
     try {
@@ -334,11 +334,28 @@ class _ProfilePageState extends State<ProfilePage> {
         });
       }
 
-      clearCurrentUser();
+      // ========================================================
+      // CLEAR CUSTOM USER SESSION
+      //
+      // This removes:
+      // 1. currentUser from memory
+      // 2. current_user from SharedPreferences
+      // ========================================================
+
+      await logoutUser();
+
+      debugPrint('CURRENT USER AFTER LOGOUT: $currentUser');
 
       if (!mounted) {
         return;
       }
+
+      // ========================================================
+      // GO TO HOME PAGE
+      //
+      // Remove all previous pages so the user cannot press
+      // Back and return to the authenticated profile page.
+      // ========================================================
 
       Navigator.pushAndRemoveUntil(
         context,
@@ -427,12 +444,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final String username = _username ?? '';
-
-    final String email = _email ?? 'No email';
-
-    final bool isAdmin = email == 'jeromeaw02@gmail.com';
-
     return Scaffold(
       // ======================================================
       // APP BAR

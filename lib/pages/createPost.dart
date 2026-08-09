@@ -194,7 +194,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
       final supabase = Supabase.instance.client;
 
-      final user = currentUserSession;
+      final user = currentUser;
 
       if (user == null) {
         throw Exception('You must be logged in to create a post.');

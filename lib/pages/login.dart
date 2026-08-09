@@ -18,9 +18,7 @@ class Login extends StatelessWidget {
       title: 'Simple Form',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
       home: const SimpleFormPage(),
@@ -32,20 +30,15 @@ class SimpleFormPage extends StatefulWidget {
   const SimpleFormPage({super.key});
 
   @override
-  State<SimpleFormPage> createState() =>
-      _SimpleFormPageState();
+  State<SimpleFormPage> createState() => _SimpleFormPageState();
 }
 
-class _SimpleFormPageState
-    extends State<SimpleFormPage> {
-  final _formKey =
-      GlobalKey<FormState>();
+class _SimpleFormPageState extends State<SimpleFormPage> {
+  final _formKey = GlobalKey<FormState>();
 
-  final _emailController =
-      TextEditingController();
+  final _emailController = TextEditingController();
 
-  final _passwordController =
-      TextEditingController();
+  final _passwordController = TextEditingController();
 
   // ==========================================================
   // DISPOSE
@@ -68,11 +61,9 @@ class _SimpleFormPageState
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Logging in...'),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Logging in...')));
 
     try {
       final user = await fetchUserForLogin(
@@ -85,35 +76,35 @@ class _SimpleFormPageState
       }
 
       if (user != null) {
-        // Save the logged-in user.
-        setCurrentUser(user);
+        // ======================================================
+        // SAVE USER IN MEMORY + SHARED PREFERENCES
+        // ======================================================
 
-        ScaffoldMessenger.of(context)
-            .hideCurrentSnackBar();
+        await setCurrentUser(user);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Login successful!',
-            ),
-          ),
-        );
+        if (!mounted) {
+          return;
+        }
 
-        // Go to Landing Page.
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Login successful!')));
+
+        // ======================================================
+        // GO TO LANDING PAGE
+        // ======================================================
+
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (context) =>
-                const LandingPage(),
-          ),
+          MaterialPageRoute(builder: (context) => const LandingPage()),
         );
       } else {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Invalid email or password.',
-            ),
-          ),
+          const SnackBar(content: Text('Invalid email or password.')),
         );
       }
     } catch (e) {
@@ -121,13 +112,11 @@ class _SimpleFormPageState
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Login failed: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
     }
   }
 
@@ -142,15 +131,13 @@ class _SimpleFormPageState
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 12),
 
               // ==================================================
               // HEADER
               // ==================================================
-
               Row(
                 children: [
                   // Logo + title
@@ -158,36 +145,21 @@ class _SimpleFormPageState
                     child: Row(
                       children: [
                         ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(24),
+                          borderRadius: BorderRadius.circular(24),
                           child: Image.asset(
                             'assets/images/jv_logo.png',
                             width: 48,
                             height: 48,
                             fit: BoxFit.cover,
-                            errorBuilder:
-                                (
-                                  context,
-                                  error,
-                                  stackTrace,
-                                ) {
+                            errorBuilder: (context, error, stackTrace) {
                               return Container(
                                 width: 48,
                                 height: 48,
-                                decoration:
-                                    BoxDecoration(
-                                  color: Colors
-                                      .grey
-                                      .shade200,
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    24,
-                                  ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(24),
                                 ),
-                                child: const Icon(
-                                  Icons.person,
-                                ),
+                                child: const Icon(Icons.person),
                               );
                             },
                           ),
@@ -198,11 +170,8 @@ class _SimpleFormPageState
                         Expanded(
                           child: Text(
                             'Jerome Vlog',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall,
-                            overflow:
-                                TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -215,16 +184,12 @@ class _SimpleFormPageState
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                          builder: (context) =>
-                              const HomePage(),
+                          builder: (context) => const HomePage(),
                         ),
                       );
                     },
-                    icon: const Icon(
-                      Icons.home,
-                    ),
-                    tooltip:
-                        'Go to homepage',
+                    icon: const Icon(Icons.home),
+                    tooltip: 'Go to homepage',
                   ),
                 ],
               ),
@@ -234,16 +199,12 @@ class _SimpleFormPageState
               // ==================================================
               // LOGIN FORM
               // ==================================================
-
               Expanded(
                 child: Center(
                   child: Form(
                     key: _formKey,
                     child: ConstrainedBox(
-                      constraints:
-                          const BoxConstraints(
-                        maxWidth: 400,
-                      ),
+                      constraints: const BoxConstraints(maxWidth: 400),
                       child: ListView(
                         shrinkWrap: true,
                         children: [
@@ -261,30 +222,16 @@ class _SimpleFormPageState
                           // ==================================================
                           // EMAIL
                           // ==================================================
-
                           TextFormField(
-                            controller:
-                                _emailController,
-                            keyboardType:
-                                TextInputType
-                                    .emailAddress,
-                            decoration:
-                                const InputDecoration(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
                               labelText: 'Email',
-                              border:
-                                  OutlineInputBorder(),
-                              prefixIcon:
-                                  Icon(
-                                Icons.email,
-                              ),
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.email),
                             ),
-                            validator:
-                                (value) {
-                              if (value ==
-                                      null ||
-                                  value
-                                      .trim()
-                                      .isEmpty) {
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
                                 return 'Please enter your email';
                               }
 
@@ -292,36 +239,21 @@ class _SimpleFormPageState
                             },
                           ),
 
-                          const SizedBox(
-                            height: 16,
-                          ),
+                          const SizedBox(height: 16),
 
                           // ==================================================
                           // PASSWORD
                           // ==================================================
-
                           TextFormField(
-                            controller:
-                                _passwordController,
+                            controller: _passwordController,
                             obscureText: true,
-                            decoration:
-                                const InputDecoration(
-                              labelText:
-                                  'Password',
-                              border:
-                                  OutlineInputBorder(),
-                              prefixIcon:
-                                  Icon(
-                                Icons.lock,
-                              ),
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.lock),
                             ),
-                            validator:
-                                (value) {
-                              if (value ==
-                                      null ||
-                                  value
-                                      .trim()
-                                      .isEmpty) {
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
                                 return 'Please enter your password';
                               }
 
@@ -329,50 +261,34 @@ class _SimpleFormPageState
                             },
                           ),
 
-                          const SizedBox(
-                            height: 24,
-                          ),
+                          const SizedBox(height: 24),
 
                           // ==================================================
                           // LOGIN BUTTON
                           // ==================================================
-
                           SizedBox(
-                            width:
-                                double.infinity,
-                            child:
-                                ElevatedButton(
-                              onPressed:
-                                  _submitForm,
-                              child:
-                                  const Text(
-                                'Log in',
-                              ),
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _submitForm,
+                              child: const Text('Log in'),
                             ),
                           ),
 
-                          const SizedBox(
-                            height: 16,
-                          ),
+                          const SizedBox(height: 16),
 
                           // ==================================================
                           // SIGN UP
                           // ==================================================
-
                           TextButton(
                             onPressed: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder:
-                                      (context) =>
-                                          const Signup(),
+                                  builder: (context) => const Signup(),
                                 ),
                               );
                             },
-                            child: const Text(
-                              "Don't have an account? Sign up",
-                            ),
+                            child: const Text("Don't have an account? Sign up"),
                           ),
                         ],
                       ),
@@ -387,4 +303,3 @@ class _SimpleFormPageState
     );
   }
 }
-
