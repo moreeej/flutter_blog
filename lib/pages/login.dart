@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:blog/services/auth_service.dart';
+
+import 'package:blog/pages/landing.dart';
 import 'package:blog/pages/signup.dart';
 import 'package:blog/main.dart';
-import 'package:blog/services/auth_service.dart';
 
 void main() {
   runApp(const Login());
@@ -60,13 +62,15 @@ class _SimpleFormPageState extends State<SimpleFormPage> {
       if (!mounted) return;
 
       if (user != null) {
+        setCurrentUser(user);
+
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('login successfully')),
         );
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomePage()),
+          MaterialPageRoute(builder: (context) => const LandingPage()),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
