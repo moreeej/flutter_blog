@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:blog/services/auth_service.dart';
 
+import 'package:blog/services/auth_service.dart';
 import 'package:blog/pages/createPost.dart';
 import 'package:blog/pages/profile.dart';
 
 void main() {
   runApp(const LandingPage());
 }
+
+// ==========================================================
+// LANDING PAGE
+// ==========================================================
 
 class LandingPage extends StatelessWidget {
   const LandingPage({super.key});
@@ -26,6 +30,10 @@ class LandingPage extends StatelessWidget {
   }
 }
 
+// ==========================================================
+// LANDING SCREEN
+// ==========================================================
+
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
 
@@ -34,11 +42,13 @@ class LandingScreen extends StatefulWidget {
 }
 
 class _LandingScreenState extends State<LandingScreen> {
-  // ==========================================================
-  // PAGINATION VARIABLES
-  // ==========================================================
-
   final ScrollController _scrollController = ScrollController();
+
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  // ==========================================================
+  // PAGINATION
+  // ==========================================================
 
   static const int _pageSize = 5;
 
@@ -59,7 +69,6 @@ class _LandingScreenState extends State<LandingScreen> {
 
     _scrollController.addListener(_onScroll);
 
-    // Load the first 5 posts.
     _loadPosts();
   }
 
@@ -76,7 +85,7 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   // ==========================================================
-  // SCROLL / PAGINATION
+  // SCROLL PAGINATION
   // ==========================================================
 
   void _onScroll() {
@@ -84,20 +93,16 @@ class _LandingScreenState extends State<LandingScreen> {
       return;
     }
 
-    // Do not request another page while loading.
     if (_isLoading) {
       return;
     }
 
-    // Do not request another page if there are no more posts.
     if (!_hasMore) {
       return;
     }
 
     final position = _scrollController.position;
 
-    // Load the next 5 posts when the user
-    // is within 200 pixels of the bottom.
     if (position.pixels >= position.maxScrollExtent - 200) {
       _loadPosts();
     }
@@ -108,7 +113,6 @@ class _LandingScreenState extends State<LandingScreen> {
   // ==========================================================
 
   Future<void> _loadPosts() async {
-    // Prevent duplicate requests.
     if (_isLoading || !_hasMore) {
       return;
     }
@@ -122,45 +126,161 @@ class _LandingScreenState extends State<LandingScreen> {
     });
 
     try {
-      // Example:
-      //
-      // First request:
-      // range(0, 4)
-      //
-      // Second request:
-      // range(5, 9)
-      //
-      // Third request:
-      // range(10, 14)
-
       final int start = _offset;
       final int end = _offset + _pageSize - 1;
 
       debugPrint('Loading posts from $start to $end');
 
-      final response = await Supabase.instance.client
+      // ======================================================
+      // GET POSTS
+      // ======================================================
+
+      final postsResponse = await _supabase
           .from('posts')
-          .select()
+          .select('id, user_id, title, description')
           .order('id', ascending: false)
           .range(start, end);
 
-      final List<Map<String, dynamic>> newPosts = (response as List)
+      final List<Map<String, dynamic>> newPosts = (postsResponse as List)
           .map((post) => Map<String, dynamic>.from(post))
           .toList();
+
+      // ======================================================
+      // NO MORE POSTS
+      // ======================================================
+
+      if (newPosts.isEmpty) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _hasMore = false;
+          _isLoading = false;
+        });
+
+        return;
+      }
+
+      // ======================================================
+      // GET POST IDS
+      // ======================================================
+
+      final List<dynamic> postIds = newPosts.map((post) => post['id']).toList();
+
+      // ======================================================
+      // GET IMAGES
+      // ======================================================
+
+      final imagesResponse = await _supabase
+          .from('post-images')
+          .select('id, post_id, image')
+          .inFilter('post_id', postIds)
+          .order('id', ascending: true);
+
+      final List<Map<String, dynamic>> imageRows = (imagesResponse as List)
+          .map((image) => Map<String, dynamic>.from(image))
+          .toList();
+
+      // ======================================================
+      // GET IMAGE IDS
+      // ======================================================
+
+      final List<dynamic> imageIds = imageRows
+          .map((image) => image['id'])
+          .toList();
+
+      // ======================================================
+      // GET COMMENTS
+      // ======================================================
+
+      List<Map<String, dynamic>> commentRows = [];
+
+      if (imageIds.isNotEmpty) {
+        final commentsResponse = await _supabase
+            .from('comments')
+            .select(
+              'id, user_id, image_id, comment, created_at, '
+              'users(username, profile_pic)',
+            )
+            .inFilter('image_id', imageIds)
+            .order('created_at', ascending: true);
+
+        commentRows = (commentsResponse as List)
+            .map((comment) => Map<String, dynamic>.from(comment))
+            .toList();
+      }
+
+      // ======================================================
+      // GROUP COMMENTS BY IMAGE
+      // ======================================================
+
+      final Map<String, List<Map<String, dynamic>>> commentsByImage = {};
+
+      for (final comment in commentRows) {
+        final String imageId = comment['image_id'].toString();
+
+        commentsByImage.putIfAbsent(imageId, () => []);
+
+        commentsByImage[imageId]!.add(comment);
+      }
+
+      // ======================================================
+      // GROUP IMAGES BY POST
+      // ======================================================
+
+      final Map<String, List<Map<String, dynamic>>> imagesByPost = {};
+
+      for (final imageRow in imageRows) {
+        final dynamic imageId = imageRow['id'];
+        final dynamic postId = imageRow['post_id'];
+
+        final String imageUrl = imageRow['image']?.toString() ?? '';
+
+        if (imageUrl.isEmpty) {
+          continue;
+        }
+
+        final String imageKey = imageId.toString();
+
+        final String postKey = postId.toString();
+
+        final List<Map<String, dynamic>> comments =
+            commentsByImage[imageKey] ?? [];
+
+        final Map<String, dynamic> imageData = {
+          'id': imageId,
+          'post_id': postId,
+          'image': imageUrl,
+          'comments': comments,
+        };
+
+        imagesByPost.putIfAbsent(postKey, () => []).add(imageData);
+      }
+
+      // ======================================================
+      // ATTACH IMAGES TO POSTS
+      // ======================================================
+
+      for (final post in newPosts) {
+        final String postKey = post['id'].toString();
+
+        post['images'] = imagesByPost[postKey] ?? <Map<String, dynamic>>[];
+      }
+
+      // ======================================================
+      // UPDATE STATE
+      // ======================================================
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        // Add new posts to existing posts.
         _posts.addAll(newPosts);
 
-        // Move pagination forward.
         _offset += newPosts.length;
 
-        // If less than 5 were returned,
-        // there are no more posts.
         _hasMore = newPosts.length == _pageSize;
 
         _isLoading = false;
@@ -171,13 +291,15 @@ class _LandingScreenState extends State<LandingScreen> {
       debugPrint('Total posts: ${_posts.length}');
 
       debugPrint('Next offset: $_offset');
-
-      debugPrint('Has more: $_hasMore');
     } on PostgrestException catch (e) {
-      debugPrint('SUPABASE POSTS ERROR');
+      debugPrint('SUPABASE LOAD POSTS ERROR');
+
       debugPrint('Message: ${e.message}');
+
       debugPrint('Code: ${e.code}');
+
       debugPrint('Details: ${e.details}');
+
       debugPrint('Hint: ${e.hint}');
 
       if (!mounted) {
@@ -220,9 +342,10 @@ class _LandingScreenState extends State<LandingScreen> {
     setState(() {
       _posts.clear();
 
-      // Reset pagination.
       _offset = 0;
+
       _hasMore = true;
+
       _isLoading = false;
     });
 
@@ -230,7 +353,330 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   // ==========================================================
+  // OPEN IMAGE VIEWER
+  // ==========================================================
+
+  void _openImageViewer(List<Map<String, dynamic>> images, int initialIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            ImageViewerPage(images: images, initialIndex: initialIndex),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // BUILD IMAGE COLLAGE
+  //
+  // Maximum preview = 4 images.
+  //
+  // If there are more than 4:
+  //
+  // 1  | 2
+  // --------
+  // 3  | 4 +N
+  //
+  // All images are still passed to ImageViewerPage.
+  // ==========================================================
+
+  Widget _buildImageCollage(List<Map<String, dynamic>> images) {
+    if (images.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final int visibleCount = images.length > 4 ? 4 : images.length;
+
+    // ========================================================
+    // ONE IMAGE
+    // ========================================================
+
+    if (visibleCount == 1) {
+      return SizedBox(
+        width: double.infinity,
+        height: 260,
+        child: GestureDetector(
+          onTap: () {
+            _openImageViewer(images, 0);
+          },
+          child: _buildCollageImage(images[0]['image'].toString()),
+        ),
+      );
+    }
+
+    // ========================================================
+    // TWO IMAGES
+    // ========================================================
+
+    if (visibleCount == 2) {
+      return SizedBox(
+        width: double.infinity,
+        height: 260,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  _openImageViewer(images, 0);
+                },
+                child: _buildCollageImage(images[0]['image'].toString()),
+              ),
+            ),
+
+            const SizedBox(width: 2),
+
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  _openImageViewer(images, 1);
+                },
+                child: _buildCollageImage(images[1]['image'].toString()),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ========================================================
+    // THREE IMAGES
+    // ========================================================
+
+    if (visibleCount == 3) {
+      return SizedBox(
+        width: double.infinity,
+        height: 260,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 2,
+              child: GestureDetector(
+                onTap: () {
+                  _openImageViewer(images, 0);
+                },
+                child: _buildCollageImage(images[0]['image'].toString()),
+              ),
+            ),
+
+            const SizedBox(width: 2),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        _openImageViewer(images, 1);
+                      },
+                      child: _buildCollageImage(images[1]['image'].toString()),
+                    ),
+                  ),
+
+                  const SizedBox(height: 2),
+
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        _openImageViewer(images, 2);
+                      },
+                      child: _buildCollageImage(images[2]['image'].toString()),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ========================================================
+    // FOUR OR MORE IMAGES
+    // ========================================================
+
+    final int remainingImages = images.length - 4;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 260,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ====================================================
+          // LEFT
+          // ====================================================
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      _openImageViewer(images, 0);
+                    },
+                    child: _buildCollageImage(images[0]['image'].toString()),
+                  ),
+                ),
+
+                const SizedBox(height: 2),
+
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      _openImageViewer(images, 2);
+                    },
+                    child: _buildCollageImage(images[2]['image'].toString()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 2),
+
+          // ====================================================
+          // RIGHT
+          // ====================================================
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      _openImageViewer(images, 1);
+                    },
+                    child: _buildCollageImage(images[1]['image'].toString()),
+                  ),
+                ),
+
+                const SizedBox(height: 2),
+
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      // IMPORTANT:
+                      // Opens the full image list.
+                      //
+                      // If there are 7 images,
+                      // initial page = image 4,
+                      // and the user can swipe to
+                      // images 5, 6, and 7.
+                      _openImageViewer(images, 3);
+                    },
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildCollageImage(images[3]['image'].toString()),
+
+                        if (remainingImages > 0)
+                          Container(
+                            color: Colors.black54,
+                            alignment: Alignment.center,
+                            child: Text(
+                              '+$remainingImages',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 30,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // SINGLE COLLAGE IMAGE
+  // ==========================================================
+
+  Widget _buildCollageImage(String imageUrl) {
+    return SizedBox.expand(
+      child: Container(
+        color: Colors.grey.shade200,
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) {
+              return child;
+            }
+
+            return const Center(child: CircularProgressIndicator());
+          },
+
+          errorBuilder: (context, error, stackTrace) {
+            return const Center(child: Icon(Icons.broken_image, size: 50));
+          },
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // GET STORAGE PATH FROM IMAGE URL
+  //
+  // Example:
+  //
+  // https://xxxxx.supabase.co/storage/v1/object/public/
+  // upload-posts-images/posts/123/image.jpg
+  //
+  // returns:
+  //
+  // posts/123/image.jpg
+  // ==========================================================
+
+  String? _getStoragePath(String imageUrl) {
+    try {
+      final Uri uri = Uri.parse(imageUrl);
+
+      final String path = uri.path;
+
+      const String marker = '/storage/v1/object/public/upload-posts-images/';
+
+      final int index = path.indexOf(marker);
+
+      if (index == -1) {
+        debugPrint('Could not determine storage path: $imageUrl');
+
+        return null;
+      }
+
+      final String storagePath = path.substring(index + marker.length);
+
+      if (storagePath.isEmpty) {
+        return null;
+      }
+
+      return Uri.decodeComponent(storagePath);
+    } catch (e) {
+      debugPrint('Storage path error: $e');
+
+      return null;
+    }
+  }
+
+  // ==========================================================
   // DELETE POST
+  //
+  // Deletes:
+  //
+  // 1. Comments
+  // 2. Image records
+  // 3. Actual Storage images
+  // 4. Post
   // ==========================================================
 
   Future<void> _deletePost(dynamic postId) async {
@@ -239,7 +685,13 @@ class _LandingScreenState extends State<LandingScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Delete Post'),
-          content: const Text('Are you sure you want to delete this post?'),
+
+          content: const Text(
+            'Are you sure you want to delete this post?\n\n'
+            'All images and comments attached '
+            'to this post will also be deleted.',
+          ),
+
           actions: [
             TextButton(
               onPressed: () {
@@ -247,7 +699,12 @@ class _LandingScreenState extends State<LandingScreen> {
               },
               child: const Text('Cancel'),
             ),
+
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () {
                 Navigator.pop(context, true);
               },
@@ -262,28 +719,151 @@ class _LandingScreenState extends State<LandingScreen> {
       return;
     }
 
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      await Supabase.instance.client.from('posts').delete().eq('id', postId);
+      debugPrint('======================================');
+
+      debugPrint('DELETE POST');
+
+      debugPrint('Post ID: $postId');
+
+      debugPrint('======================================');
+
+      // ======================================================
+      // STEP 1
+      // GET IMAGE RECORDS
+      // ======================================================
+
+      final imageResponse = await _supabase
+          .from('post-images')
+          .select('id, image')
+          .eq('post_id', postId);
+
+      final List<Map<String, dynamic>> imageRows = (imageResponse as List)
+          .map((image) => Map<String, dynamic>.from(image))
+          .toList();
+
+      final List<dynamic> imageIds = imageRows
+          .map((image) => image['id'])
+          .toList();
+
+      debugPrint('Image IDs: $imageIds');
+
+      // ======================================================
+      // STEP 2
+      // GET STORAGE FILE PATHS
+      // ======================================================
+
+      final List<String> storagePaths = [];
+
+      for (final imageRow in imageRows) {
+        final String imageUrl = imageRow['image']?.toString() ?? '';
+
+        if (imageUrl.isEmpty) {
+          continue;
+        }
+
+        final String? storagePath = _getStoragePath(imageUrl);
+
+        if (storagePath != null && storagePath.isNotEmpty) {
+          storagePaths.add(storagePath);
+        }
+      }
+
+      debugPrint('Storage files: $storagePaths');
+
+      // ======================================================
+      // STEP 3
+      // DELETE COMMENTS
+      // ======================================================
+
+      if (imageIds.isNotEmpty) {
+        await _supabase
+            .from('comments')
+            .delete()
+            .inFilter('image_id', imageIds);
+
+        debugPrint('Comments deleted.');
+      }
+
+      // ======================================================
+      // STEP 4
+      // DELETE ACTUAL STORAGE FILES
+      // ======================================================
+
+      if (storagePaths.isNotEmpty) {
+        try {
+          await _supabase.storage
+              .from('upload-posts-images')
+              .remove(storagePaths);
+
+          debugPrint('Storage images deleted.');
+        } catch (storageError) {
+          debugPrint(
+            'Storage delete warning: '
+            '$storageError',
+          );
+
+          // We continue because the database
+          // records should still be removed.
+        }
+      }
+
+      // ======================================================
+      // STEP 5
+      // DELETE IMAGE RECORDS
+      // ======================================================
+
+      await _supabase.from('post-images').delete().eq('post_id', postId);
+
+      debugPrint('Post image records deleted.');
+
+      // ======================================================
+      // STEP 6
+      // DELETE POST
+      // ======================================================
+
+      await _supabase.from('posts').delete().eq('id', postId);
+
+      debugPrint('Post deleted.');
+
+      // ======================================================
+      // STEP 7
+      // REMOVE FROM LOCAL LIST
+      // ======================================================
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _posts.removeWhere((post) => post['id'] == postId);
+        _posts.removeWhere(
+          (post) => post['id'].toString() == postId.toString(),
+        );
 
-        // Keep offset synchronized with the
-        // number of posts currently displayed.
         if (_offset > 0) {
           _offset--;
         }
+
+        _isLoading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post deleted successfully.')),
+        const SnackBar(
+          content: Text('Post, images, and comments deleted successfully.'),
+        ),
       );
     } on PostgrestException catch (e) {
-      debugPrint('DELETE POST ERROR');
+      debugPrint('======================================');
+
+      debugPrint('DELETE POST SUPABASE ERROR');
 
       debugPrint('Message: ${e.message}');
 
@@ -293,9 +873,15 @@ class _LandingScreenState extends State<LandingScreen> {
 
       debugPrint('Hint: ${e.hint}');
 
+      debugPrint('======================================');
+
       if (!mounted) {
         return;
       }
+
+      setState(() {
+        _isLoading = false;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete post: ${e.message}')),
@@ -307,6 +893,10 @@ class _LandingScreenState extends State<LandingScreen> {
         return;
       }
 
+      setState(() {
+        _isLoading = false;
+      });
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to delete post: $e')));
@@ -317,22 +907,120 @@ class _LandingScreenState extends State<LandingScreen> {
   // EDIT POST
   // ==========================================================
 
-  void _editPost(Map<String, dynamic> post) {
-    // Connect your EditPostPage here.
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit post page is not connected yet.')),
+  Future<void> _editPost(Map<String, dynamic> post) async {
+    final TextEditingController titleController = TextEditingController(
+      text: post['title']?.toString() ?? '',
     );
-  }
 
-  // ==========================================================
-  // COMMENT POST
-  // ==========================================================
+    final TextEditingController descriptionController = TextEditingController(
+      text: post['description']?.toString() ?? '',
+    );
 
-  void _commentPost(dynamic postId) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('You must log in first')));
+    final bool? shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Post'),
+
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Title',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, false);
+              },
+              child: const Text('Cancel'),
+            ),
+
+            ElevatedButton(
+              onPressed: () {
+                if (titleController.text.trim().isEmpty ||
+                    descriptionController.text.trim().isEmpty) {
+                  return;
+                }
+
+                Navigator.pop(context, true);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldSave != true) {
+      titleController.dispose();
+      descriptionController.dispose();
+
+      return;
+    }
+
+    final String title = titleController.text.trim();
+
+    final String description = descriptionController.text.trim();
+
+    titleController.dispose();
+    descriptionController.dispose();
+
+    try {
+      await _supabase
+          .from('posts')
+          .update({'title': title, 'description': description})
+          .eq('id', post['id']);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        post['title'] = title;
+        post['description'] = description;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post updated successfully.')),
+      );
+    } on PostgrestException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update post: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update post: $e')));
+    }
   }
 
   // ==========================================================
@@ -346,8 +1034,11 @@ class _LandingScreenState extends State<LandingScreen> {
     final bool isAdmin = userEmail == 'jeromeaw02@gmail.com';
 
     final String username =
-        currentUser?['username']?.toString() ??
-        (isAdmin ? 'Boss' : 'Visitor');
+        currentUser?['username']?.toString() ?? (isAdmin ? 'Boss' : 'Visitor');
+
+    final String? profilePic = currentUser?['profile_pic']?.toString().trim();
+
+    final bool hasProfilePic = profilePic != null && profilePic.isNotEmpty;
 
     return Scaffold(
       body: SafeArea(
@@ -390,7 +1081,6 @@ class _LandingScreenState extends State<LandingScreen> {
 
                   const Spacer(),
 
-                  // PROFILE AVATAR
                   GestureDetector(
                     onTap: () async {
                       await Navigator.push(
@@ -400,28 +1090,19 @@ class _LandingScreenState extends State<LandingScreen> {
                         ),
                       );
 
-                      // Refresh Landing Page when returning from Profile
                       await _refreshPosts();
 
-                      setState(() {});
+                      if (mounted) {
+                        setState(() {});
+                      }
                     },
                     child: CircleAvatar(
                       radius: 24,
                       backgroundColor: Colors.deepPurple.shade100,
-                      backgroundImage:
-                          currentUser?['profile_pic'] != null &&
-                              currentUser!['profile_pic']
-                                  .toString()
-                                  .isNotEmpty
-                          ? NetworkImage(
-                              currentUser!['profile_pic'].toString(),
-                            )
+                      backgroundImage: hasProfilePic
+                          ? NetworkImage(profilePic!)
                           : null,
-                      child:
-                          currentUser?['profile_pic'] == null ||
-                              currentUser!['profile_pic']
-                                  .toString()
-                                  .isEmpty
+                      child: !hasProfilePic
                           ? const Icon(
                               Icons.person,
                               color: Colors.deepPurple,
@@ -436,7 +1117,7 @@ class _LandingScreenState extends State<LandingScreen> {
               const SizedBox(height: 24),
 
               // ==================================================
-              // PROFILE / WELCOME SECTION
+              // WELCOME
               // ==================================================
               Row(
                 children: [
@@ -479,8 +1160,6 @@ class _LandingScreenState extends State<LandingScreen> {
                         ),
                       );
 
-                      // Reload posts after
-                      // returning from Create Post.
                       await _refreshPosts();
                     },
                     style: OutlinedButton.styleFrom(
@@ -494,8 +1173,7 @@ class _LandingScreenState extends State<LandingScreen> {
                       ),
                     ),
                     child: Text(
-                      "What's on your mind, Boss "
-                      "$username?",
+                      "What's on your mind, Boss $username?",
                       style: const TextStyle(fontSize: 15),
                     ),
                   ),
@@ -504,7 +1182,7 @@ class _LandingScreenState extends State<LandingScreen> {
               const SizedBox(height: 24),
 
               // ==================================================
-              // POST LIST
+              // POSTS
               // ==================================================
               Expanded(
                 child: RefreshIndicator(
@@ -524,12 +1202,10 @@ class _LandingScreenState extends State<LandingScreen> {
   // ==========================================================
 
   Widget _buildPostList(bool isAdmin) {
-    // Initial loading state.
     if (_posts.isEmpty && _isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // No posts.
     if (_posts.isEmpty && !_isLoading) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -544,13 +1220,11 @@ class _LandingScreenState extends State<LandingScreen> {
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
 
-      // Add one extra item for the
-      // bottom loading indicator.
       itemCount: _posts.length + (_hasMore ? 1 : 0),
 
       itemBuilder: (context, index) {
         // ======================================================
-        // BOTTOM LOADING INDICATOR
+        // PAGINATION LOADER
         // ======================================================
 
         if (index == _posts.length) {
@@ -560,76 +1234,43 @@ class _LandingScreenState extends State<LandingScreen> {
           );
         }
 
-        // ======================================================
-        // POST DATA
-        // ======================================================
-
         final Map<String, dynamic> post = _posts[index];
+
+        final dynamic postId = post['id'];
 
         final String title = post['title']?.toString() ?? 'Untitled';
 
         final String description =
             post['description']?.toString() ?? 'No description';
 
-        final String? imageUrl = post['image']?.toString();
-
-        final dynamic postId = post['id'];
-
-        // ======================================================
-        // POST CARD
-        // ======================================================
+        final List<Map<String, dynamic>> images =
+            (post['images'] as List?)
+                ?.map((image) => Map<String, dynamic>.from(image))
+                .toList() ??
+            [];
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
           clipBehavior: Clip.antiAlias,
+
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+
             children: [
               // ==================================================
-              // POST IMAGE
+              // IMAGE COLLAGE
               // ==================================================
-              if (imageUrl != null && imageUrl.isNotEmpty)
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
-                  ),
-                  child: Image.network(
-                    imageUrl,
-                    height: 220,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) {
-                        return child;
-                      }
-
-                      return const SizedBox(
-                        height: 220,
-                        width: double.infinity,
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    },
-
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        height: 220,
-                        width: double.infinity,
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image, size: 50),
-                      );
-                    },
-                  ),
-                ),
+              if (images.isNotEmpty) _buildImageCollage(images),
 
               // ==================================================
-              // POST CONTENT
+              // CONTENT
               // ==================================================
               Padding(
                 padding: const EdgeInsets.all(12),
+
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+
                   children: [
                     Text(
                       title,
@@ -650,9 +1291,6 @@ class _LandingScreenState extends State<LandingScreen> {
                     // ==================================================
                     Row(
                       children: [
-                        // ==================================================
-                        // ADMIN BUTTONS
-                        // ==================================================
                         if (isAdmin) ...[
                           Expanded(
                             child: ElevatedButton.icon(
@@ -668,6 +1306,10 @@ class _LandingScreenState extends State<LandingScreen> {
 
                           Expanded(
                             child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
                               onPressed: () {
                                 _deletePost(postId);
                               },
@@ -675,21 +1317,19 @@ class _LandingScreenState extends State<LandingScreen> {
                               label: const Text('Delete'),
                             ),
                           ),
-                        ]
-                        // ==================================================
-                        // COMMENT BUTTON - NON ADMIN ONLY
-                        // ==================================================
-                        else
+                        ] else
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: () {
-                                _commentPost(postId);
-                              },
+                              onPressed: images.isNotEmpty
+                                  ? () {
+                                      _openImageViewer(images, 0);
+                                    }
+                                  : null,
                               icon: const Icon(
                                 Icons.comment_outlined,
                                 size: 18,
                               ),
-                              label: const Text('Comment'),
+                              label: const Text('View Comments'),
                             ),
                           ),
                       ],
@@ -701,6 +1341,705 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+// ==========================================================
+// FULL-SCREEN IMAGE VIEWER
+// ==========================================================
+
+class ImageViewerPage extends StatefulWidget {
+  final List<Map<String, dynamic>> images;
+
+  final int initialIndex;
+
+  const ImageViewerPage({
+    super.key,
+    required this.images,
+    required this.initialIndex,
+  });
+
+  @override
+  State<ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+class _ImageViewerPageState extends State<ImageViewerPage> {
+  late final PageController _pageController;
+
+  late int _currentIndex;
+
+  // ==========================================================
+  // INIT
+  // ==========================================================
+
+  @override
+  void initState() {
+    super.initState();
+
+    _currentIndex = widget.initialIndex;
+
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  // ==========================================================
+  // DISPOSE
+  // ==========================================================
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+
+    super.dispose();
+  }
+
+  // ==========================================================
+  // ADD COMMENT
+  // ==========================================================
+
+  Future<void> _addComment(dynamic imageId) async {
+    final TextEditingController controller = TextEditingController();
+
+    final String? comment = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Add Comment'),
+
+          content: TextField(
+            controller: controller,
+            maxLines: 4,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Write a comment...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+
+            ElevatedButton(
+              onPressed: () {
+                final String value = controller.text.trim();
+
+                if (value.isEmpty) {
+                  return;
+                }
+
+                Navigator.pop(context, value);
+              },
+              child: const Text('Comment'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (comment == null || comment.trim().isEmpty) {
+      return;
+    }
+
+    final dynamic userId = currentUser?['id'];
+
+    if (userId == null) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('You must log in first.')));
+
+      return;
+    }
+
+    try {
+      final response = await Supabase.instance.client
+          .from('comments')
+          .insert({
+            'user_id': userId,
+            'image_id': imageId,
+            'comment': comment.trim(),
+          })
+          .select(
+            'id, user_id, image_id, '
+            'comment, created_at, '
+            'users(username, profile_pic)',
+          )
+          .single();
+
+      final currentImage = widget.images[_currentIndex];
+
+      final List<Map<String, dynamic>> comments =
+          (currentImage['comments'] as List?)
+              ?.map((comment) => Map<String, dynamic>.from(comment))
+              .toList() ??
+          [];
+
+      comments.add(Map<String, dynamic>.from(response));
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        currentImage['comments'] = comments;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Comment added.')));
+    } on PostgrestException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add comment: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to add comment: $e')));
+    }
+  }
+
+  // ==========================================================
+  // EDIT COMMENT
+  // ==========================================================
+
+  Future<void> _editComment(dynamic commentId, String currentComment) async {
+    final TextEditingController controller = TextEditingController(
+      text: currentComment,
+    );
+
+    final String? newComment = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Comment'),
+
+          content: TextField(
+            controller: controller,
+            maxLines: 4,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Edit your comment...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+
+            ElevatedButton(
+              onPressed: () {
+                final String value = controller.text.trim();
+
+                if (value.isEmpty) {
+                  return;
+                }
+
+                Navigator.pop(context, value);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (newComment == null || newComment.trim().isEmpty) {
+      return;
+    }
+
+    final String? userId = currentUser?['id']?.toString();
+
+    if (userId == null) {
+      return;
+    }
+
+    try {
+      await Supabase.instance.client
+          .from('comments')
+          .update({'comment': newComment.trim()})
+          .eq('id', commentId)
+          .eq('user_id', userId);
+
+      final currentImage = widget.images[_currentIndex];
+
+      final List<Map<String, dynamic>> comments =
+          (currentImage['comments'] as List?)
+              ?.map((comment) => Map<String, dynamic>.from(comment))
+              .toList() ??
+          [];
+
+      final int index = comments.indexWhere(
+        (comment) => comment['id'].toString() == commentId.toString(),
+      );
+
+      if (index != -1) {
+        comments[index]['comment'] = newComment.trim();
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        currentImage['comments'] = comments;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Comment updated.')));
+    } on PostgrestException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to edit comment: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to edit comment: $e')));
+    }
+  }
+
+  // ==========================================================
+  // DELETE COMMENT
+  // ==========================================================
+
+  Future<void> _deleteComment(dynamic commentId) async {
+    final String? userId = currentUser?['id']?.toString();
+
+    if (userId == null) {
+      return;
+    }
+
+    final bool? shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Delete Comment'),
+
+          content: const Text(
+            'Are you sure you want to '
+            'delete this comment?',
+          ),
+
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, false);
+              },
+              child: const Text('Cancel'),
+            ),
+
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.pop(context, true);
+              },
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) {
+      return;
+    }
+
+    try {
+      await Supabase.instance.client
+          .from('comments')
+          .delete()
+          .eq('id', commentId)
+          .eq('user_id', userId);
+
+      final currentImage = widget.images[_currentIndex];
+
+      final List<Map<String, dynamic>> comments =
+          (currentImage['comments'] as List?)
+              ?.map((comment) => Map<String, dynamic>.from(comment))
+              .toList() ??
+          [];
+
+      comments.removeWhere(
+        (comment) => comment['id'].toString() == commentId.toString(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        currentImage['comments'] = comments;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Comment deleted successfully.')),
+      );
+    } on PostgrestException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete comment: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete comment: $e')));
+    }
+  }
+
+  // ==========================================================
+  // COMMENT LIST
+  // ==========================================================
+
+  Widget _buildComments(Map<String, dynamic> image) {
+    final List<Map<String, dynamic>> comments =
+        (image['comments'] as List?)
+            ?.map((comment) => Map<String, dynamic>.from(comment))
+            .toList() ??
+        [];
+
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 250),
+      color: Colors.white,
+
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ==================================================
+          // COMMENTS HEADER
+          // ==================================================
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Text(
+              'Comments (${comments.length})',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          // ==================================================
+          // SCROLLABLE COMMENTS
+          // ==================================================
+          Expanded(
+            child: comments.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'No comments yet.\nBe the first to comment.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: comments.length,
+                    itemBuilder: (context, index) {
+                      final comment = comments[index];
+
+                      final String commentText =
+                          comment['comment']?.toString() ?? '';
+
+                      final dynamic commentUserId = comment['user_id'];
+
+                      // ==================================================
+                      // USER DATA
+                      // ==================================================
+
+                      final Map<String, dynamic>? user = comment['users'] is Map
+                          ? Map<String, dynamic>.from(comment['users'])
+                          : null;
+
+                      final String username =
+                          user?['username']?.toString().trim().isNotEmpty ==
+                              true
+                          ? user!['username'].toString().trim()
+                          : 'Unknown User';
+
+                      // ==================================================
+                      // PROFILE IMAGE
+                      // ==================================================
+
+                      final String? profilePic = user?['profile_pic']
+                          ?.toString()
+                          .trim();
+
+                      final bool hasProfilePic =
+                          profilePic != null && profilePic.isNotEmpty;
+
+                      // ==================================================
+                      // CURRENT USER
+                      // ==================================================
+
+                      final String? currentUserId = currentUser?['id']
+                          ?.toString();
+
+                      final bool isOwner =
+                          currentUserId != null &&
+                          currentUserId == commentUserId?.toString();
+
+                      // ==================================================
+                      // COMMENT ITEM
+                      // ==================================================
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+
+                          children: [
+                            // ==================================================
+                            // AVATAR
+                            // ==================================================
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Colors.deepPurple.shade100,
+                              backgroundImage: hasProfilePic
+                                  ? NetworkImage(profilePic!)
+                                  : null,
+                              child: !hasProfilePic
+                                  ? const Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.deepPurple,
+                                    )
+                                  : null,
+                            ),
+
+                            const SizedBox(width: 10),
+
+                            // ==================================================
+                            // COMMENT TEXT
+                            // ==================================================
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    username,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 3),
+
+                                  Text(commentText),
+                                ],
+                              ),
+                            ),
+
+                            // ==================================================
+                            // EDIT / DELETE
+                            // ==================================================
+                            if (isOwner)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Edit',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      _editComment(comment['id'], commentText);
+                                    },
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      size: 20,
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 12),
+
+                                  IconButton(
+                                    tooltip: 'Delete',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      _deleteComment(comment['id']);
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // BUILD IMAGE VIEWER
+  // ==========================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, dynamic> currentImage = widget.images[_currentIndex];
+
+    final String imageUrl = currentImage['image'].toString();
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+
+      // ========================================================
+      // APP BAR
+      // ========================================================
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+
+        title: Text(
+          '${_currentIndex + 1} / ${widget.images.length}',
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
+
+      // ========================================================
+      // BODY
+      // ========================================================
+      body: Column(
+        children: [
+          // ====================================================
+          // IMAGE
+          // ====================================================
+          Expanded(
+            child: PageView.builder(
+              controller: _pageController,
+
+              itemCount: widget.images.length,
+
+              onPageChanged: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+
+              itemBuilder: (context, index) {
+                final String url = widget.images[index]['image'].toString();
+
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+
+                  child: Center(
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) {
+                          return child;
+                        }
+
+                        return const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        );
+                      },
+
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Icon(
+                            Icons.broken_image,
+                            color: Colors.white,
+                            size: 60,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // ====================================================
+          // COMMENTS
+          // ====================================================
+          _buildComments(currentImage),
+
+          // ====================================================
+          // ADD COMMENT
+          // ====================================================
+          Container(
+            color: Colors.white,
+
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+
+            child: SizedBox(
+              width: double.infinity,
+
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  _addComment(currentImage['id']);
+                },
+
+                icon: const Icon(Icons.comment),
+
+                label: const Text('Add Comment'),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

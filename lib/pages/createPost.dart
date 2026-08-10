@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:blog/services/auth_service.dart';
 
 class CreatePostPage extends StatefulWidget {
@@ -11,14 +12,24 @@ class CreatePostPage extends StatefulWidget {
 }
 
 class _CreatePostPageState extends State<CreatePostPage> {
-  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _titleController =
+      TextEditingController();
+
   final TextEditingController _descriptionController =
       TextEditingController();
 
   bool _isUploading = false;
   bool _isCreatingPost = false;
 
-  String? _uploadedImageUrl;
+  // Stores uploaded image URLs
+  final List<String> _uploadedImageUrls = [];
+
+  // Your actual Supabase Storage bucket
+  static const String imageBucket = 'upload_posts_images';
+
+  // Your actual database tables
+  static const String postsTable = 'posts';
+  static const String postImagesTable = 'post-images';
 
   @override
   void dispose() {
@@ -27,16 +38,19 @@ class _CreatePostPageState extends State<CreatePostPage> {
     super.dispose();
   }
 
-  Future<void> _pickAndUploadImage() async {
+  // ==========================================================
+  // PICK AND UPLOAD MULTIPLE IMAGES
+  // ==========================================================
+
+  Future<void> _pickAndUploadImages() async {
     try {
       setState(() {
         _isUploading = true;
       });
 
-      // Pick image from local computer/device
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
-        allowMultiple: false,
+        allowMultiple: true,
         withData: true,
       );
 
@@ -49,82 +63,145 @@ class _CreatePostPageState extends State<CreatePostPage> {
         return;
       }
 
-      final PlatformFile file = result.files.first;
+      // Maximum 10 images per post
+      if (result.files.length > 10) {
+        if (mounted) {
+          setState(() {
+            _isUploading = false;
+          });
 
-      // Important for Flutter Web
-      if (file.bytes == null) {
-        throw Exception(
-          'Could not read the selected image. Please try another image.',
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'You can select a maximum of 10 images.',
+              ),
+            ),
+          );
+        }
+
+        return;
       }
 
-      // Get extension
-      final String extension =
-          (file.extension ?? 'jpg').toLowerCase();
+      // Prevent total images from exceeding 10
+      if (_uploadedImageUrls.length + result.files.length > 10) {
+        if (mounted) {
+          setState(() {
+            _isUploading = false;
+          });
 
-      // Generate unique filename
-      final String fileName =
-          '${DateTime.now().millisecondsSinceEpoch}.$extension';
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'A post can have a maximum of 10 images.',
+              ),
+            ),
+          );
+        }
 
-      // Put images inside a folder
-      final String filePath = 'posts/$fileName';
-
-      // Correct MIME type
-      String contentType;
-
-      switch (extension) {
-        case 'jpg':
-        case 'jpeg':
-          contentType = 'image/jpeg';
-          break;
-
-        case 'png':
-          contentType = 'image/png';
-          break;
-
-        case 'gif':
-          contentType = 'image/gif';
-          break;
-
-        case 'webp':
-          contentType = 'image/webp';
-          break;
-
-        case 'bmp':
-          contentType = 'image/bmp';
-          break;
-
-        default:
-          contentType = 'application/octet-stream';
+        return;
       }
 
-      final supabase = Supabase.instance.client;
+      final SupabaseClient supabase =
+          Supabase.instance.client;
 
-      // Upload image to Supabase Storage
-      await supabase.storage.from('posts').uploadBinary(
-        filePath,
-        file.bytes!,
-        fileOptions: FileOptions(
-          contentType: contentType,
-          upsert: true,
-        ),
-      );
+      final List<String> uploadedUrls = [];
 
-      // Get public URL
-      final String publicUrl = supabase.storage
-          .from('posts')
-          .getPublicUrl(filePath);
+      // ========================================================
+      // UPLOAD EACH IMAGE
+      // ========================================================
+
+      for (final PlatformFile file in result.files) {
+        if (file.bytes == null) {
+          continue;
+        }
+
+        final String extension =
+            (file.extension ?? 'jpg').toLowerCase();
+
+        // Unique filename
+        final String timestamp =
+            DateTime.now()
+                .microsecondsSinceEpoch
+                .toString();
+
+        final String fileName =
+            '${timestamp}_${file.name}';
+
+        // Folder inside upload_posts_images bucket
+        final String filePath =
+            'posts/$fileName';
+
+        // ======================================================
+        // DETERMINE CONTENT TYPE
+        // ======================================================
+
+        String contentType;
+
+        switch (extension) {
+          case 'jpg':
+          case 'jpeg':
+            contentType = 'image/jpeg';
+            break;
+
+          case 'png':
+            contentType = 'image/png';
+            break;
+
+          case 'gif':
+            contentType = 'image/gif';
+            break;
+
+          case 'webp':
+            contentType = 'image/webp';
+            break;
+
+          case 'bmp':
+            contentType = 'image/bmp';
+            break;
+
+          default:
+            contentType = 'application/octet-stream';
+        }
+
+        // ======================================================
+        // UPLOAD TO YOUR ACTUAL BUCKET
+        // ======================================================
+
+        await supabase.storage
+            .from(imageBucket)
+            .uploadBinary(
+              filePath,
+              file.bytes!,
+              fileOptions: FileOptions(
+                contentType: contentType,
+                upsert: false,
+              ),
+            );
+
+        // ======================================================
+        // GET PUBLIC URL
+        // ======================================================
+
+        final String publicUrl =
+            supabase.storage
+                .from(imageBucket)
+                .getPublicUrl(filePath);
+
+        uploadedUrls.add(publicUrl);
+      }
 
       if (!mounted) return;
 
       setState(() {
-        _uploadedImageUrl = publicUrl;
+        _uploadedImageUrls.addAll(uploadedUrls);
         _isUploading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Image uploaded successfully!'),
+        SnackBar(
+          content: Text(
+            '${uploadedUrls.length} image(s) uploaded successfully!',
+          ),
         ),
       );
     } on StorageException catch (e) {
@@ -150,20 +227,45 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Upload failed: $e'),
+          content: Text(
+            'Upload failed: $e',
+          ),
         ),
       );
     }
   }
 
+  // ==========================================================
+  // REMOVE IMAGE
+  // ==========================================================
+
+  void _removeImage(int index) {
+    setState(() {
+      _uploadedImageUrls.removeAt(index);
+    });
+  }
+
+  // ==========================================================
+  // CREATE POST
+  // ==========================================================
+
   Future<void> _submitPost() async {
-    final String title = _titleController.text.trim();
-    final String description = _descriptionController.text.trim();
+    final String title =
+        _titleController.text.trim();
+
+    final String description =
+        _descriptionController.text.trim();
+
+    // ========================================================
+    // VALIDATION
+    // ========================================================
 
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a title'),
+          content: Text(
+            'Please enter a title.',
+          ),
         ),
       );
       return;
@@ -172,16 +274,20 @@ class _CreatePostPageState extends State<CreatePostPage> {
     if (description.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a description'),
+          content: Text(
+            'Please enter a description.',
+          ),
         ),
       );
       return;
     }
 
-    if (_uploadedImageUrl == null) {
+    if (_uploadedImageUrls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please upload an image first'),
+          content: Text(
+            'Please upload at least one image.',
+          ),
         ),
       );
       return;
@@ -192,27 +298,85 @@ class _CreatePostPageState extends State<CreatePostPage> {
         _isCreatingPost = true;
       });
 
-      final supabase = Supabase.instance.client;
+      final SupabaseClient supabase =
+          Supabase.instance.client;
+
+      // ========================================================
+      // GET CURRENT USER
+      // ========================================================
 
       final user = currentUser;
 
       if (user == null) {
-        throw Exception('You must be logged in to create a post.');
+        throw Exception(
+          'You must be logged in to create a post.',
+        );
       }
 
-      // Insert post into your Supabase database
-      await supabase.from('posts').insert({
-        'title': title,
-        'description': description,
-        'image': _uploadedImageUrl,
-        'user_id': user['id'],
-      });
+      // ========================================================
+      // STEP 1
+      // INSERT INTO "posts"
+      //
+      // posts:
+      // id
+      // user_id
+      // title
+      // description
+      // created_at
+      //
+      // id and created_at are automatically generated.
+      // ========================================================
+
+      final Map<String, dynamic> postResponse =
+          await supabase
+              .from(postsTable)
+              .insert({
+                'user_id': user['id'],
+                'title': title,
+                'description': description,
+              })
+              .select('id')
+              .single();
+
+      // Get generated post ID
+      final dynamic postId =
+          postResponse['id'];
+
+      // ========================================================
+      // STEP 2
+      // INSERT IMAGES INTO "post-images"
+      //
+      // post-images:
+      // id
+      // post_id
+      // image
+      //
+      // id is automatically generated.
+      // ========================================================
+
+      final List<Map<String, dynamic>> imageRows =
+          _uploadedImageUrls.map((imageUrl) {
+        return {
+          'post_id': postId,
+          'image': imageUrl,
+        };
+      }).toList();
+
+      await supabase
+          .from(postImagesTable)
+          .insert(imageRows);
+
+      // ========================================================
+      // SUCCESS
+      // ========================================================
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Post created successfully!'),
+          content: Text(
+            'Post created successfully!',
+          ),
         ),
       );
 
@@ -222,7 +386,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to create post: $e'),
+          content: Text(
+            'Failed to create post: $e',
+          ),
         ),
       );
     } finally {
@@ -234,23 +400,165 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
   }
 
+  // ==========================================================
+  // IMAGE PREVIEW
+  // ==========================================================
+
+  Widget _buildImagePreview() {
+    if (_uploadedImageUrls.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Selected Images',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        GridView.builder(
+          shrinkWrap: true,
+          physics:
+              const NeverScrollableScrollPhysics(),
+          itemCount:
+              _uploadedImageUrls.length,
+          gridDelegate:
+              const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1,
+          ),
+          itemBuilder: (context, index) {
+            final String imageUrl =
+                _uploadedImageUrls[index];
+
+            return Stack(
+              children: [
+                // IMAGE
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(12),
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder:
+                          (context, error, stackTrace) {
+                        return Container(
+                          color:
+                              Colors.grey.shade200,
+                          alignment:
+                              Alignment.center,
+                          child: const Icon(
+                            Icons.broken_image,
+                            size: 40,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                // REMOVE BUTTON
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: GestureDetector(
+                    onTap: () {
+                      _removeImage(index);
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration:
+                          const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // IMAGE NUMBER
+                Positioned(
+                  bottom: 6,
+                  left: 6,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration:
+                        BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius:
+                          BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // ==========================================================
+  // BUILD
+  // ==========================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Post'),
+        title: const Text(
+          'Create Post',
+        ),
       ),
+
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding:
+            const EdgeInsets.all(16),
+
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+
           children: [
             // TITLE
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(
+              textInputAction:
+                  TextInputAction.next,
+              decoration:
+                  const InputDecoration(
                 labelText: 'Title',
-                border: OutlineInputBorder(),
+                hintText:
+                    'Enter your post title',
+                border:
+                    OutlineInputBorder(),
               ),
             ),
 
@@ -258,97 +566,95 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
             // DESCRIPTION
             TextField(
-              controller: _descriptionController,
+              controller:
+                  _descriptionController,
               maxLines: 6,
-              decoration: const InputDecoration(
+              decoration:
+                  const InputDecoration(
                 labelText: 'Description',
-                border: OutlineInputBorder(),
+                hintText:
+                    'Write something...',
+                alignLabelWithHint: true,
+                border:
+                    OutlineInputBorder(),
               ),
             ),
 
             const SizedBox(height: 16),
 
-            // UPLOAD BUTTON
+            // SELECT IMAGES
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed:
-                    _isUploading ? null : _pickAndUploadImage,
+              child:
+                  ElevatedButton.icon(
+                onPressed: _isUploading
+                    ? null
+                    : _pickAndUploadImages,
+
                 icon: _isUploading
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(
+                        child:
+                            CircularProgressIndicator(
                           strokeWidth: 2,
                         ),
                       )
-                    : const Icon(Icons.upload),
+                    : const Icon(
+                        Icons.photo_library,
+                      ),
+
                 label: Text(
                   _isUploading
                       ? 'Uploading...'
-                      : 'Select Image',
+                      : 'Select Images',
                 ),
               ),
             ),
 
+            const SizedBox(height: 8),
+
+            // IMAGE COUNT
+            if (_uploadedImageUrls
+                .isNotEmpty)
+              Text(
+                '${_uploadedImageUrls.length} image(s) selected',
+                style: TextStyle(
+                  color:
+                      Colors.grey.shade700,
+                ),
+              ),
+
             const SizedBox(height: 16),
 
             // IMAGE PREVIEW
-            if (_uploadedImageUrl != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Uploaded image:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      _uploadedImageUrl!,
-                      height: 200,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (context, error, stackTrace) {
-                        return Container(
-                          height: 200,
-                          width: double.infinity,
-                          alignment: Alignment.center,
-                          color: Colors.grey.shade200,
-                          child: const Text(
-                            'Unable to display image',
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+            _buildImagePreview(),
 
             const SizedBox(height: 24),
 
-            // CREATE POST BUTTON
+            // CREATE POST
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
                 onPressed:
-                    _isCreatingPost ? null : _submitPost,
+                    _isCreatingPost ||
+                            _isUploading
+                        ? null
+                        : _submitPost,
+
                 child: _isCreatingPost
                     ? const SizedBox(
                         width: 22,
                         height: 22,
-                        child: CircularProgressIndicator(
+                        child:
+                            CircularProgressIndicator(
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text('Create Post'),
+                    : const Text(
+                        'Create Post',
+                      ),
               ),
             ),
           ],
@@ -357,3 +663,4 @@ class _CreatePostPageState extends State<CreatePostPage> {
     );
   }
 }
+
