@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:blog/services/auth_service.dart';
+
 import 'package:blog/pages/createPost.dart';
 import 'package:blog/pages/profile.dart';
+import 'package:blog/pages/editPost.dart';
 
 void main() {
   runApp(const LandingPage());
@@ -908,118 +909,13 @@ class _LandingScreenState extends State<LandingScreen> {
   // ==========================================================
 
   Future<void> _editPost(Map<String, dynamic> post) async {
-    final TextEditingController titleController = TextEditingController(
-      text: post['title']?.toString() ?? '',
+    final bool? updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (context) => EditPostPage(post: post)),
     );
 
-    final TextEditingController descriptionController = TextEditingController(
-      text: post['description']?.toString() ?? '',
-    );
-
-    final bool? shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Edit Post'),
-
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                TextField(
-                  controller: descriptionController,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context, false);
-              },
-              child: const Text('Cancel'),
-            ),
-
-            ElevatedButton(
-              onPressed: () {
-                if (titleController.text.trim().isEmpty ||
-                    descriptionController.text.trim().isEmpty) {
-                  return;
-                }
-
-                Navigator.pop(context, true);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldSave != true) {
-      titleController.dispose();
-      descriptionController.dispose();
-
-      return;
-    }
-
-    final String title = titleController.text.trim();
-
-    final String description = descriptionController.text.trim();
-
-    titleController.dispose();
-    descriptionController.dispose();
-
-    try {
-      await _supabase
-          .from('posts')
-          .update({'title': title, 'description': description})
-          .eq('id', post['id']);
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        post['title'] = title;
-        post['description'] = description;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post updated successfully.')),
-      );
-    } on PostgrestException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update post: ${e.message}')),
-      );
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to update post: $e')));
+    if (updated == true) {
+      await _refreshPosts();
     }
   }
 
