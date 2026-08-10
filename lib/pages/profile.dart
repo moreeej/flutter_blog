@@ -147,6 +147,8 @@ class _ProfilePageState extends State<ProfilePage> {
     final String? userId = currentUser?['id']?.toString();
 
     if (userId == null) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('You are not logged in.')));
@@ -157,12 +159,16 @@ class _ProfilePageState extends State<ProfilePage> {
     final String newUsername = _usernameController.text.trim();
 
     if (newUsername.isEmpty) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Username cannot be empty.')),
       );
 
       return;
     }
+
+    if (!mounted) return;
 
     setState(() {
       _isSaving = true;
@@ -172,7 +178,7 @@ class _ProfilePageState extends State<ProfilePage> {
       String? newProfilePic = _profilePic;
 
       // ======================================================
-      // UPLOAD NEW IMAGE ONLY IF SELECTED
+      // UPLOAD NEW PROFILE IMAGE
       // ======================================================
 
       if (_selectedImage != null) {
@@ -195,25 +201,41 @@ class _ProfilePageState extends State<ProfilePage> {
           .eq('id', userId);
 
       // ======================================================
-      // UPDATE LOCAL SESSION
+      // GET THE ACTUAL UPDATED USER FROM SUPABASE
       // ======================================================
 
-      currentUser ??= {};
+      final updatedUser = await Supabase.instance.client
+          .from('users')
+          .select()
+          .eq('id', userId)
+          .single();
 
-      currentUser!['username'] = newUsername;
+      // ======================================================
+      // UPDATE GLOBAL CURRENT USER
+      // ======================================================
 
-      if (newProfilePic != null) {
-        currentUser!['profile_pic'] = newProfilePic;
-      }
+      await setCurrentUser(Map<String, dynamic>.from(updatedUser));
 
-      if (!mounted) {
-        return;
-      }
+      debugPrint('UPDATED CURRENT USER: $currentUser');
+
+      debugPrint('UPDATED USERNAME: ${currentUser?['username']}');
+
+      debugPrint('UPDATED PROFILE PIC: ${currentUser?['profile_pic']}');
+
+      if (!mounted) return;
+
+      // ======================================================
+      // UPDATE PROFILE PAGE
+      // ======================================================
 
       setState(() {
-        _username = newUsername;
+        _username = currentUser?['username']?.toString();
 
-        _profilePic = newProfilePic;
+        _email = currentUser?['email']?.toString();
+
+        _profilePic = currentUser?['profile_pic']?.toString();
+
+        _usernameController.text = _username ?? '';
 
         _selectedImage = null;
 
@@ -227,18 +249,12 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     } on PostgrestException catch (e) {
       debugPrint('UPDATE PROFILE ERROR');
-
       debugPrint('Message: ${e.message}');
-
       debugPrint('Code: ${e.code}');
-
       debugPrint('Details: ${e.details}');
-
       debugPrint('Hint: ${e.hint}');
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _isSaving = false;
@@ -250,9 +266,7 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       debugPrint('SAVE PROFILE ERROR: $e');
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _isSaving = false;
