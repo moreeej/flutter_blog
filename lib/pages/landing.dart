@@ -1742,152 +1742,186 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     return Container(
       width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 250),
       color: Colors.white,
-      padding: const EdgeInsets.all(12),
 
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-
         children: [
-          Text(
-            'Comments (${comments.length})',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          // ==================================================
+          // COMMENTS HEADER
+          // ==================================================
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Text(
+              'Comments (${comments.length})',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
           ),
 
-          const SizedBox(height: 8),
-
-          if (comments.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                'No comments yet. '
-                'Be the first to comment.',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-
-          ...comments.map((comment) {
-            final String commentText = comment['comment']?.toString() ?? '';
-
-            final dynamic commentUserId = comment['user_id'];
-
-            // ==================================================
-            // USER DATA
-            // ==================================================
-
-            final Map<String, dynamic>? user = comment['users'] is Map
-                ? Map<String, dynamic>.from(comment['users'])
-                : null;
-
-            final String username =
-                user?['username']?.toString().trim().isNotEmpty == true
-                ? user!['username'].toString().trim()
-                : 'Unknown User';
-
-            // ==================================================
-            // PROFILE IMAGE
-            // ==================================================
-
-            final String? profilePic = user?['profile_pic']?.toString().trim();
-
-            final bool hasProfilePic =
-                profilePic != null && profilePic.isNotEmpty;
-
-            // ==================================================
-            // CURRENT USER
-            // ==================================================
-
-            final String? currentUserId = currentUser?['id']?.toString();
-
-            final bool isOwner =
-                currentUserId != null &&
-                currentUserId == commentUserId?.toString();
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-
-                children: [
-                  // ==================================================
-                  // AVATAR
-                  // ==================================================
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.deepPurple.shade100,
-                    backgroundImage: hasProfilePic
-                        ? NetworkImage(profilePic!)
-                        : null,
-                    child: !hasProfilePic
-                        ? const Icon(
-                            Icons.person,
-                            size: 20,
-                            color: Colors.deepPurple,
-                          )
-                        : null,
-                  ),
-
-                  const SizedBox(width: 10),
-
-                  // ==================================================
-                  // COMMENT
-                  // ==================================================
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          username,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-
-                        const SizedBox(height: 3),
-
-                        Text(commentText),
-                      ],
+          // ==================================================
+          // SCROLLABLE COMMENTS
+          // ==================================================
+          Expanded(
+            child: comments.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'No comments yet.\nBe the first to comment.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
                     ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: comments.length,
+                    itemBuilder: (context, index) {
+                      final comment = comments[index];
+
+                      final String commentText =
+                          comment['comment']?.toString() ?? '';
+
+                      final dynamic commentUserId = comment['user_id'];
+
+                      // ==================================================
+                      // USER DATA
+                      // ==================================================
+
+                      final Map<String, dynamic>? user = comment['users'] is Map
+                          ? Map<String, dynamic>.from(comment['users'])
+                          : null;
+
+                      final String username =
+                          user?['username']?.toString().trim().isNotEmpty ==
+                              true
+                          ? user!['username'].toString().trim()
+                          : 'Unknown User';
+
+                      // ==================================================
+                      // PROFILE IMAGE
+                      // ==================================================
+
+                      final String? profilePic = user?['profile_pic']
+                          ?.toString()
+                          .trim();
+
+                      final bool hasProfilePic =
+                          profilePic != null && profilePic.isNotEmpty;
+
+                      // ==================================================
+                      // CURRENT USER
+                      // ==================================================
+
+                      final String? currentUserId = currentUser?['id']
+                          ?.toString();
+
+                      final bool isOwner =
+                          currentUserId != null &&
+                          currentUserId == commentUserId?.toString();
+
+                      // ==================================================
+                      // COMMENT ITEM
+                      // ==================================================
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+
+                          children: [
+                            // ==================================================
+                            // AVATAR
+                            // ==================================================
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Colors.deepPurple.shade100,
+                              backgroundImage: hasProfilePic
+                                  ? NetworkImage(profilePic!)
+                                  : null,
+                              child: !hasProfilePic
+                                  ? const Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.deepPurple,
+                                    )
+                                  : null,
+                            ),
+
+                            const SizedBox(width: 10),
+
+                            // ==================================================
+                            // COMMENT TEXT
+                            // ==================================================
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    username,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 3),
+
+                                  Text(commentText),
+                                ],
+                              ),
+                            ),
+
+                            // ==================================================
+                            // EDIT / DELETE
+                            // ==================================================
+                            if (isOwner)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Edit',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      _editComment(comment['id'], commentText);
+                                    },
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      size: 20,
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 12),
+
+                                  IconButton(
+                                    tooltip: 'Delete',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () {
+                                      _deleteComment(comment['id']);
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-
-                  // ==================================================
-                  // EDIT / DELETE
-                  // ==================================================
-                  if (isOwner)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Edit',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () {
-                            _editComment(comment['id'], commentText);
-                          },
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                        ),
-
-                        const SizedBox(width: 12),
-
-                        IconButton(
-                          tooltip: 'Delete',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () {
-                            _deleteComment(comment['id']);
-                          },
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            );
-          }),
+          ),
         ],
       ),
     );
